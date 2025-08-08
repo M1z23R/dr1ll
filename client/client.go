@@ -16,8 +16,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	TOKEN = "some-hard-coded-token"
+var (
+	TOKEN  string
+	DOMAIN string
 )
 
 type Message struct {
@@ -226,7 +227,7 @@ func (c *Client) run() error {
 func main() {
 	var (
 		port      = flag.Int("port", 3000, "Local port to forward requests to")
-		serverURL = flag.String("server", "http://localhost:9090", "Tunnel server URL")
+		serverURL = flag.String("server", DOMAIN, "Tunnel server URL")
 		token     = flag.String("token", TOKEN, "Authentication token")
 	)
 	flag.Parse()
@@ -244,4 +245,18 @@ func main() {
 	}
 
 	fmt.Println("👋 Tunnel closed. Goodbye!")
+}
+
+func init() {
+	TOKEN = os.Getenv("TUNNEL_TOKEN")
+	if TOKEN == "" {
+		TOKEN = "some-hard-coded-token"
+		log.Println("⚠️  TUNNEL_TOKEN not set, using default token")
+	}
+
+	DOMAIN = os.Getenv("TUNNEL_DOMAIN")
+	if DOMAIN == "" {
+		DOMAIN = "http://localhost:9090"
+		log.Println("⚠️  TUNNEL_DOMAIN not set, using default domain")
+	}
 }

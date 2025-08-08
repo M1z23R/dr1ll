@@ -17,6 +17,7 @@ import (
 var (
 	TOKEN  string
 	DOMAIN string
+	PORT   string
 )
 
 type Message struct {
@@ -266,6 +267,12 @@ func init() {
 		DOMAIN = "mydomain.com"
 		log.Println("⚠️  TUNNEL_DOMAIN not set, using default domain")
 	}
+
+	PORT = os.Getenv("TUNNEL_PORT")
+	if PORT == "" {
+		PORT = "9090"
+		log.Println("⚠️  TUNNEL_PORT not set, using default 9090")
+	}
 }
 
 func main() {
@@ -275,9 +282,9 @@ func main() {
 
 	http.HandleFunc("/", server.handleHTTPRequest)
 
-	log.Printf("Tunnel server starting on :9090")
-	log.Printf("WebSocket endpoint: ws://%s:9090/ws", DOMAIN)
-	log.Printf("HTTP tunnels: http://*.%s:9090", DOMAIN)
+	log.Printf("Tunnel server starting on :%s", PORT)
+	log.Printf("WebSocket endpoint: ws://%s:%s/ws", DOMAIN, PORT)
+	log.Printf("HTTP tunnels: http://*.%s:%s", DOMAIN, PORT)
 
 	if err := http.ListenAndServe(":9090", nil); err != nil {
 		log.Fatal("Server failed to start:", err)

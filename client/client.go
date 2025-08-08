@@ -21,29 +21,31 @@ const (
 )
 
 type Message struct {
-	Type    string            `json:"type"`
-	ID      string            `json:"id,omitempty"`
-	Subdomain string          `json:"subdomain,omitempty"`
-	Method  string            `json:"method,omitempty"`
-	Path    string            `json:"path,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    string            `json:"body,omitempty"`
-	Status  int               `json:"status,omitempty"`
-	Error   string            `json:"error,omitempty"`
+	Type      string            `json:"type"`
+	ID        string            `json:"id,omitempty"`
+	Subdomain string            `json:"subdomain,omitempty"`
+	Method    string            `json:"method,omitempty"`
+	Path      string            `json:"path,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      string            `json:"body,omitempty"`
+	Status    int               `json:"status,omitempty"`
+	Error     string            `json:"error,omitempty"`
 }
 
 type Client struct {
-	conn       *websocket.Conn
-	localPort  int
-	serverURL  string
-	done       chan struct{}
+	conn            *websocket.Conn
+	localPort       int
+	serverURL       string
+	done            chan struct{}
+	pendingRequests map[string]chan Message
 }
 
 func NewClient(serverURL string, localPort int) *Client {
 	return &Client{
-		serverURL: serverURL,
-		localPort: localPort,
-		done:      make(chan struct{}),
+		serverURL:       serverURL,
+		localPort:       localPort,
+		done:            make(chan struct{}),
+		pendingRequests: make(map[string]chan Message),
 	}
 }
 
@@ -97,6 +99,12 @@ func (c *Client) handleMessages() {
 		case "http_request":
 			go c.forwardRequest(msg)
 
+		case "http_response":
+			if ch, ok := c.pendingRequests[msg.ID]; ok {
+				ch <- msg
+				delete(c.pendingRequests, msg.ID)
+			}
+
 		default:
 			log.Printf("Unknown message type: %s", msg.Type)
 		}
@@ -107,7 +115,6 @@ func (c *Client) forwardRequest(msg Message) {
 	// Construct local URL
 	localURL := fmt.Sprintf("http://localhost:%d%s", c.localPort, msg.Path)
 
-	// Create HTTP request
 	var bodyReader io.Reader
 	if msg.Body != "" {
 		bodyReader = strings.NewReader(msg.Body)
@@ -119,18 +126,13 @@ func (c *Client) forwardRequest(msg Message) {
 		return
 	}
 
-	// Set headers (excluding Host which will be set automatically)
 	for name, value := range msg.Headers {
 		if name != "Host" {
 			req.Header.Set(name, value)
 		}
 	}
 
-	// Make request to local server
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		c.sendErrorResponse(msg.ID, fmt.Sprintf("Request failed: %v", err))
@@ -138,14 +140,12 @@ func (c *Client) forwardRequest(msg Message) {
 	}
 	defer resp.Body.Close()
 
-	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		c.sendErrorResponse(msg.ID, fmt.Sprintf("Failed to read response: %v", err))
 		return
 	}
 
-	// Convert response headers
 	respHeaders := make(map[string]string)
 	for name, values := range resp.Header {
 		if len(values) > 0 {
@@ -153,7 +153,6 @@ func (c *Client) forwardRequest(msg Message) {
 		}
 	}
 
-	// Send response back through WebSocket
 	response := Message{
 		Type:    "http_response",
 		ID:      msg.ID,
@@ -162,6 +161,7 @@ func (c *Client) forwardRequest(msg Message) {
 		Body:    string(respBody),
 	}
 
+	// Send back the HTTP response to the server via WebSocket
 	if err := c.conn.WriteJSON(response); err != nil {
 		log.Printf("Failed to send response: %v", err)
 	}
@@ -206,7 +206,7 @@ func (c *Client) run() error {
 		log.Println("Connection closed")
 	case <-interrupt:
 		log.Println("Interrupt received, closing connection...")
-		
+
 		// Send close message to server
 		err := c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		if err != nil {
@@ -226,7 +226,7 @@ func (c *Client) run() error {
 func main() {
 	var (
 		port      = flag.Int("port", 3000, "Local port to forward requests to")
-		serverURL = flag.String("server", "http://localhost:8080", "Tunnel server URL")
+		serverURL = flag.String("server", "http://localhost:9090", "Tunnel server URL")
 		token     = flag.String("token", TOKEN, "Authentication token")
 	)
 	flag.Parse()

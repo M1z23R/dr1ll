@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -39,9 +38,11 @@ type Client struct {
 }
 
 type Server struct {
-	clients  map[string]*Client
-	mutex    sync.RWMutex
-	upgrader websocket.Upgrader
+	clients           map[string]*Client
+	mutex             sync.RWMutex
+	upgrader          websocket.Upgrader
+	pendingRequests   map[string]chan Message
+	pendingRequestsMu sync.RWMutex
 }
 
 func NewServer() *Server {
@@ -52,6 +53,7 @@ func NewServer() *Server {
 				return true // Allow all origins for simplicity
 			},
 		},
+		pendingRequests: make(map[string]chan Message),
 	}
 }
 
@@ -165,9 +167,14 @@ func (s *Server) writePump(client *Client) {
 }
 
 func (s *Server) handleHTTPResponse(msg Message) {
-	// In a real implementation, you'd use channels or callbacks to send responses
-	// back to the waiting HTTP handler
-	log.Printf("Received response for request %s: status %d", msg.ID, msg.Status)
+	s.pendingRequestsMu.RLock()
+	ch, ok := s.pendingRequests[msg.ID]
+	s.pendingRequestsMu.RUnlock()
+	if ok {
+		ch <- msg
+	} else {
+		log.Printf("No pending request for ID %s", msg.ID)
+	}
 }
 
 func (s *Server) handleHTTPRequest(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +211,19 @@ func (s *Server) handleHTTPRequest(w http.ResponseWriter, r *http.Request) {
 	// Generate request ID
 	requestID := s.generateSubdomain()
 
-	// Create message for client
+	// Prepare a channel to receive the response
+	responseChan := make(chan Message, 1)
+
+	s.pendingRequestsMu.Lock()
+	s.pendingRequests[requestID] = responseChan
+	s.pendingRequestsMu.Unlock()
+
+	defer func() {
+		s.pendingRequestsMu.Lock()
+		delete(s.pendingRequests, requestID)
+		s.pendingRequestsMu.Unlock()
+	}()
+
 	msg := Message{
 		Type:    "http_request",
 		ID:      requestID,
@@ -214,22 +233,25 @@ func (s *Server) handleHTTPRequest(w http.ResponseWriter, r *http.Request) {
 		Body:    string(body),
 	}
 
-	// Send to client (non-blocking)
+	// Try sending the request
 	select {
 	case client.send <- msg:
-		// For simplicity, return a basic response
-		// In a real implementation, you'd wait for the client's response
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		response := map[string]any{
-			"message":    "Request forwarded to tunnel",
-			"tunnel":     subdomain + "." + DOMAIN,
-			"request_id": requestID,
+		// Wait for response or timeout
+		select {
+		case resp := <-responseChan:
+			// Write response from client
+			for key, value := range resp.Headers {
+				w.Header().Set(key, value)
+			}
+			w.WriteHeader(resp.Status)
+			w.Write([]byte(resp.Body))
+		case <-r.Context().Done():
+			http.Error(w, "Client response timeout", http.StatusGatewayTimeout)
 		}
-		json.NewEncoder(w).Encode(response)
 	default:
 		http.Error(w, "Tunnel is busy", http.StatusServiceUnavailable)
 	}
+
 }
 
 func init() {
@@ -249,17 +271,15 @@ func init() {
 func main() {
 	server := NewServer()
 
-	// WebSocket endpoint for tunnel clients
 	http.HandleFunc("/ws", server.handleWebSocket)
 
-	// Catch-all handler for HTTP requests to tunnels
 	http.HandleFunc("/", server.handleHTTPRequest)
 
-	log.Printf("Tunnel server starting on :8080")
-	log.Printf("WebSocket endpoint: ws://localhost:8080/ws")
-	log.Printf("HTTP tunnels: http://*.%s:8080", DOMAIN)
+	log.Printf("Tunnel server starting on :9090")
+	log.Printf("WebSocket endpoint: ws://%s:9090/ws", DOMAIN)
+	log.Printf("HTTP tunnels: http://*.%s:9090", DOMAIN)
 
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(":9090", nil); err != nil {
 		log.Fatal("Server failed to start:", err)
 	}
 }

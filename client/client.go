@@ -18,7 +18,7 @@ import (
 
 var (
 	TOKEN  string
-	DOMAIN string
+	SERVER string
 )
 
 type Message struct {
@@ -93,7 +93,7 @@ func (c *Client) handleMessages() {
 
 		switch msg.Type {
 		case "subdomain_assigned":
-			fmt.Printf("🚀 Tunnel active! Your URL is: http://%s\n", msg.Subdomain)
+			fmt.Printf("🚀 Tunnel active! Your URL is: %s\n", msg.Subdomain)
 			fmt.Printf("💡 Forwarding requests to localhost:%d\n", c.localPort)
 			fmt.Println("📝 Press Ctrl+C to stop the tunnel")
 
@@ -227,9 +227,10 @@ func (c *Client) run() error {
 func main() {
 	var (
 		port      = flag.Int("port", 3000, "Local port to forward requests to")
-		serverURL = flag.String("server", DOMAIN, "Tunnel server URL")
+		serverURL = flag.String("server", SERVER, "Tunnel server URL")
 		token     = flag.String("token", TOKEN, "Authentication token")
 	)
+	fmt.Printf("%d\n%s\n%s\n", *port, *serverURL, *token)
 	flag.Parse()
 
 	if *token != TOKEN {
@@ -254,9 +255,9 @@ func init() {
 		log.Println("⚠️  TUNNEL_TOKEN not set, using default token")
 	}
 
-	DOMAIN = os.Getenv("TUNNEL_DOMAIN")
-	if DOMAIN == "" {
-		DOMAIN = "http://localhost:9090"
+	SERVER = os.Getenv("TUNNEL_SERVER")
+	if SERVER == "" {
+		SERVER = "http://localhost:9090"
 		log.Println("⚠️  TUNNEL_DOMAIN not set, using default domain")
 	}
 }

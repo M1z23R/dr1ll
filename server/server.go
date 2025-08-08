@@ -283,8 +283,8 @@ func main() {
 	http.HandleFunc("/", server.handleHTTPRequest)
 
 	log.Printf("Tunnel server starting on :%s", PORT)
-	log.Printf("WebSocket endpoint: ws://%s:%s/ws", DOMAIN, PORT)
-	log.Printf("HTTP tunnels: http://*.%s:%s", DOMAIN, PORT)
+	log.Printf("WebSocket endpoint: wss://%s:%s/ws", DOMAIN, PORT)
+	log.Printf("HTTP tunnels: https://*.%s:%s", DOMAIN, PORT)
 
 	if err := http.ListenAndServe(":9090", nil); err != nil {
 		log.Fatal("Server failed to start:", err)

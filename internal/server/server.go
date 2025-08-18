@@ -108,16 +108,16 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	requestedSubdomain := r.URL.Query().Get("subdomain")
 	var subdomain string
-	var hasSubdomainConflict bool
 	
 	if requestedSubdomain != "" {
 		if s.isSubdomainAvailable(requestedSubdomain) {
 			subdomain = requestedSubdomain
 			log.Printf("Client requested and assigned subdomain: %s.%s", subdomain, s.domain)
 		} else {
-			subdomain = s.generateSubdomain()
-			hasSubdomainConflict = true
-			log.Printf("Requested subdomain '%s' not available, assigned: %s.%s", requestedSubdomain, subdomain, s.domain)
+			log.Printf("Requested subdomain '%s' not available, rejecting connection", requestedSubdomain)
+			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseUnsupportedData, fmt.Sprintf("Subdomain '%s' is not available", requestedSubdomain)))
+			conn.Close()
+			return
 		}
 	} else {
 		subdomain = s.generateSubdomain()
@@ -142,17 +142,6 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	
 	select {
 	case client.send <- assignMsg:
-		if hasSubdomainConflict {
-			errorMsg := Message{
-				Type:  "error",
-				Error: fmt.Sprintf("Requested subdomain '%s' was not available. Assigned '%s' instead.", requestedSubdomain, subdomain),
-			}
-			select {
-			case client.send <- errorMsg:
-			default:
-				log.Printf("Failed to send subdomain conflict error: client send channel full")
-			}
-		}
 	default:
 		log.Printf("Failed to send initial subdomain assignment: client send channel full")
 		return

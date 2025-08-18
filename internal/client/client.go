@@ -73,6 +73,9 @@ func (c *Client) connect() error {
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
 	if err != nil {
+		if c.requestedSubdomain != "" && websocket.IsCloseError(err, websocket.CloseUnsupportedData) {
+			return fmt.Errorf("subdomain '%s' is not available", c.requestedSubdomain)
+		}
 		return fmt.Errorf("failed to connect to server: %v", err)
 	}
 

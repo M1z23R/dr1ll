@@ -21,6 +21,8 @@ func main() {
 	switch command {
 	case "start":
 		startCommand()
+	case "config":
+		configCommand()
 	case "help", "-h", "--help":
 		showUsage()
 	default:
@@ -35,6 +37,7 @@ func showUsage() {
 	fmt.Println("")
 	fmt.Println("Usage:")
 	fmt.Println("  dr1ll-server start [options]    Start the tunnel server")
+	fmt.Println("  dr1ll-server config <command>   Manage configuration")
 	fmt.Println("  dr1ll-server help              Show this help message")
 	fmt.Println("")
 	fmt.Println("Start options:")
@@ -52,6 +55,12 @@ func showUsage() {
 	fmt.Println("  TUNNEL_PORT             Server port")
 	fmt.Println("  TUNNEL_DOMAIN           Server domain")
 	fmt.Println("  TUNNEL_TOKEN            Authentication token")
+	fmt.Println("")
+	fmt.Println("Config commands:")
+	fmt.Println("  dr1ll-server config set-domain <domain>    Set server domain")
+	fmt.Println("  dr1ll-server config set-port <port>        Set server port")
+	fmt.Println("  dr1ll-server config set-token <token>      Set authentication token")
+	fmt.Println("  dr1ll-server config show                   Show current configuration")
 	fmt.Println("")
 	fmt.Println("Config file format:")
 	fmt.Println("  {")
@@ -120,6 +129,74 @@ func getEnvWithConfigFallback(envKey, configValue, defaultValue string) string {
 		return configValue
 	}
 	return defaultValue
+}
+
+func configCommand() {
+	if len(os.Args) < 3 {
+		fmt.Println("Config command required. Available commands:")
+		fmt.Println("  set-domain <domain>    Set server domain")
+		fmt.Println("  set-port <port>        Set server port")
+		fmt.Println("  set-token <token>      Set authentication token")
+		fmt.Println("  show                   Show current configuration")
+		os.Exit(1)
+	}
+
+	subcommand := os.Args[2]
+
+	switch subcommand {
+	case "set-domain":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: dr1ll-server config set-domain <domain>")
+			os.Exit(1)
+		}
+		domain := os.Args[3]
+		if err := config.SetServerDomain(domain); err != nil {
+			log.Fatalf("Failed to set server domain: %v", err)
+		}
+		fmt.Printf("✅ Server domain set to: %s\n", domain)
+
+	case "set-port":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: dr1ll-server config set-port <port>")
+			os.Exit(1)
+		}
+		port := os.Args[3]
+		if err := config.SetServerPort(port); err != nil {
+			log.Fatalf("Failed to set server port: %v", err)
+		}
+		fmt.Printf("✅ Server port set to: %s\n", port)
+
+	case "set-token":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: dr1ll-server config set-token <token>")
+			os.Exit(1)
+		}
+		token := os.Args[3]
+		if err := config.SetServerToken(token); err != nil {
+			log.Fatalf("Failed to set server token: %v", err)
+		}
+		fmt.Println("✅ Server authentication token updated")
+
+	case "show":
+		cfg, err := config.Load()
+		if err != nil {
+			log.Fatalf("Failed to load configuration: %v", err)
+		}
+		
+		configPath, _ := config.GetConfigPath()
+		fmt.Printf("Configuration file: %s\n", configPath)
+		fmt.Printf("Server domain: %s\n", cfg.ServerDomain)
+		fmt.Printf("Server port: %s\n", cfg.ServerPort)
+		if cfg.ServerToken != "" {
+			fmt.Printf("Server token: %s***\n", cfg.ServerToken[:min(len(cfg.ServerToken), 8)])
+		} else {
+			fmt.Println("Server token: (not set)")
+		}
+
+	default:
+		fmt.Printf("Unknown config command: %s\n", subcommand)
+		os.Exit(1)
+	}
 }
 
 func min(a, b int) int {

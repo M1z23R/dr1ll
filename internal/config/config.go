@@ -116,3 +116,33 @@ func SetToken(token string) error {
 	config.Token = token
 	return config.Save()
 }
+
+func SetServerDomain(domain string) error {
+	config, err := Load()
+	if err != nil {
+		return err
+	}
+	
+	config.ServerDomain = domain
+	return config.Save()
+}
+
+func SetServerPort(port string) error {
+	config, err := Load()
+	if err != nil {
+		return err
+	}
+	
+	config.ServerPort = port
+	return config.Save()
+}
+
+func SetServerToken(token string) error {
+	config, err := Load()
+	if err != nil {
+		return err
+	}
+	
+	config.ServerToken = token
+	return config.Save()
+}

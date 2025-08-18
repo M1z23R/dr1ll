@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/M1z23R/dr1ll/internal/config"
 	"github.com/M1z23R/dr1ll/internal/server"
 )
 
@@ -37,14 +38,27 @@ func showUsage() {
 	fmt.Println("  dr1ll-server help              Show this help message")
 	fmt.Println("")
 	fmt.Println("Start options:")
-	fmt.Println("  -port <port>            Server port (default: 9090, or TUNNEL_PORT env)")
-	fmt.Println("  -domain <domain>        Server domain (default: mydomain.com, or TUNNEL_DOMAIN env)")
-	fmt.Println("  -token <token>          Auth token (default: some-hard-coded-token, or TUNNEL_TOKEN env)")
+	fmt.Println("  -port <port>            Server port")
+	fmt.Println("  -domain <domain>        Server domain")
+	fmt.Println("  -token <token>          Auth token")
+	fmt.Println("")
+	fmt.Println("Configuration priority (highest to lowest):")
+	fmt.Println("  1. Command line flags")
+	fmt.Println("  2. Environment variables")
+	fmt.Println("  3. Config file (~/.config/dr1ll/config.json)")
+	fmt.Println("  4. Built-in defaults")
 	fmt.Println("")
 	fmt.Println("Environment variables:")
 	fmt.Println("  TUNNEL_PORT             Server port")
 	fmt.Println("  TUNNEL_DOMAIN           Server domain")
 	fmt.Println("  TUNNEL_TOKEN            Authentication token")
+	fmt.Println("")
+	fmt.Println("Config file format:")
+	fmt.Println("  {")
+	fmt.Println("    \"server_port\": \"9090\",")
+	fmt.Println("    \"server_domain\": \"yourdomain.com\",")
+	fmt.Println("    \"server_token\": \"your-secret-token\"")
+	fmt.Println("  }")
 }
 
 func startCommand() {
@@ -52,9 +66,19 @@ func startCommand() {
 	
 	fs := flag.NewFlagSet("start", flag.ExitOnError)
 	
-	defaultPort := getEnv("TUNNEL_PORT", "9090")
-	defaultDomain := getEnv("TUNNEL_DOMAIN", "mydomain.com")
-	defaultToken := getEnv("TUNNEL_TOKEN", "some-hard-coded-token")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("Failed to load config: %v, using defaults", err)
+		cfg = &config.Config{
+			ServerPort:   "9090",
+			ServerDomain: "mydomain.com",
+			ServerToken:  "some-hard-coded-token",
+		}
+	}
+	
+	defaultPort := getEnvWithConfigFallback("TUNNEL_PORT", cfg.ServerPort, "9090")
+	defaultDomain := getEnvWithConfigFallback("TUNNEL_DOMAIN", cfg.ServerDomain, "mydomain.com")
+	defaultToken := getEnvWithConfigFallback("TUNNEL_TOKEN", cfg.ServerToken, "some-hard-coded-token")
 	
 	port := fs.String("port", defaultPort, "Server port")
 	domain := fs.String("domain", defaultDomain, "Server domain")
@@ -84,6 +108,16 @@ func startCommand() {
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return defaultValue
+}
+
+func getEnvWithConfigFallback(envKey, configValue, defaultValue string) string {
+	if value := os.Getenv(envKey); value != "" {
+		return value
+	}
+	if configValue != "" {
+		return configValue
 	}
 	return defaultValue
 }

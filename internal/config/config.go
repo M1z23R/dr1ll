@@ -10,6 +10,11 @@ import (
 type Config struct {
 	TunnelServer string `json:"tunnel_server"`
 	Token        string `json:"token"`
+	
+	// Server configuration
+	ServerPort   string `json:"server_port,omitempty"`
+	ServerDomain string `json:"server_domain,omitempty"`
+	ServerToken  string `json:"server_token,omitempty"`
 }
 
 func GetConfigDir() (string, error) {
@@ -51,6 +56,9 @@ func Load() (*Config, error) {
 		return &Config{
 			TunnelServer: "http://localhost:9090",
 			Token:        "some-hard-coded-token",
+			ServerPort:   "9090",
+			ServerDomain: "mydomain.com",
+			ServerToken:  "some-hard-coded-token",
 		}, nil
 	}
 	

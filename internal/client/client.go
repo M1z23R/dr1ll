@@ -16,16 +16,15 @@ import (
 )
 
 type Message struct {
-	Type              string            `json:"type"`
-	ID                string            `json:"id,omitempty"`
-	Subdomain         string            `json:"subdomain,omitempty"`
-	RequestedSubdomain string           `json:"requested_subdomain,omitempty"`
-	Method            string            `json:"method,omitempty"`
-	Path              string            `json:"path,omitempty"`
-	Headers           map[string]string `json:"headers,omitempty"`
-	Body              string            `json:"body,omitempty"`
-	Status            int               `json:"status,omitempty"`
-	Error             string            `json:"error,omitempty"`
+	Type      string            `json:"type"`
+	ID        string            `json:"id,omitempty"`
+	Subdomain string            `json:"subdomain,omitempty"`
+	Method    string            `json:"method,omitempty"`
+	Path      string            `json:"path,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      string            `json:"body,omitempty"`
+	Status    int               `json:"status,omitempty"`
+	Error     string            `json:"error,omitempty"`
 }
 
 type Client struct {
@@ -64,6 +63,10 @@ func (c *Client) connect() error {
 	}
 
 	wsURL := fmt.Sprintf("%s://%s/ws", scheme, u.Host)
+	
+	if c.requestedSubdomain != "" {
+		wsURL += fmt.Sprintf("?subdomain=%s", url.QueryEscape(c.requestedSubdomain))
+	}
 
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+c.token)
@@ -74,17 +77,6 @@ func (c *Client) connect() error {
 	}
 
 	c.conn = conn
-
-	if c.requestedSubdomain != "" {
-		requestMsg := Message{
-			Type:              "subdomain_request",
-			RequestedSubdomain: c.requestedSubdomain,
-		}
-		if err := conn.WriteJSON(requestMsg); err != nil {
-			return fmt.Errorf("failed to request subdomain: %v", err)
-		}
-	}
-
 	return nil
 }
 

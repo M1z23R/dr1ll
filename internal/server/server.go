@@ -15,16 +15,15 @@ import (
 )
 
 type Message struct {
-	Type              string            `json:"type"`
-	ID                string            `json:"id,omitempty"`
-	Subdomain         string            `json:"subdomain,omitempty"`
-	RequestedSubdomain string           `json:"requested_subdomain,omitempty"`
-	Method            string            `json:"method,omitempty"`
-	Path              string            `json:"path,omitempty"`
-	Headers           map[string]string `json:"headers,omitempty"`
-	Body              string            `json:"body,omitempty"`
-	Status            int               `json:"status,omitempty"`
-	Error             string            `json:"error,omitempty"`
+	Type      string            `json:"type"`
+	ID        string            `json:"id,omitempty"`
+	Subdomain string            `json:"subdomain,omitempty"`
+	Method    string            `json:"method,omitempty"`
+	Path      string            `json:"path,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Body      string            `json:"body,omitempty"`
+	Status    int               `json:"status,omitempty"`
+	Error     string            `json:"error,omitempty"`
 }
 
 type Client struct {
@@ -107,7 +106,24 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subdomain := s.generateSubdomain()
+	requestedSubdomain := r.URL.Query().Get("subdomain")
+	var subdomain string
+	var hasSubdomainConflict bool
+	
+	if requestedSubdomain != "" {
+		if s.isSubdomainAvailable(requestedSubdomain) {
+			subdomain = requestedSubdomain
+			log.Printf("Client requested and assigned subdomain: %s.%s", subdomain, s.domain)
+		} else {
+			subdomain = s.generateSubdomain()
+			hasSubdomainConflict = true
+			log.Printf("Requested subdomain '%s' not available, assigned: %s.%s", requestedSubdomain, subdomain, s.domain)
+		}
+	} else {
+		subdomain = s.generateSubdomain()
+		log.Printf("Client connected with generated subdomain: %s.%s", subdomain, s.domain)
+	}
+
 	client := &Client{
 		conn:      conn,
 		subdomain: subdomain,
@@ -122,14 +138,26 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		Subdomain: fmt.Sprintf("%s.%s", subdomain, s.domain),
 	}
 
-	if err := conn.WriteJSON(assignMsg); err != nil {
-		log.Printf("Failed to send subdomain assignment: %v", err)
+	go s.writePump(client)
+	
+	select {
+	case client.send <- assignMsg:
+		if hasSubdomainConflict {
+			errorMsg := Message{
+				Type:  "error",
+				Error: fmt.Sprintf("Requested subdomain '%s' was not available. Assigned '%s' instead.", requestedSubdomain, subdomain),
+			}
+			select {
+			case client.send <- errorMsg:
+			default:
+				log.Printf("Failed to send subdomain conflict error: client send channel full")
+			}
+		}
+	default:
+		log.Printf("Failed to send initial subdomain assignment: client send channel full")
 		return
 	}
 
-	log.Printf("Client connected with subdomain: %s.%s", subdomain, s.domain)
-
-	go s.writePump(client)
 	s.readPump(client)
 }
 
@@ -148,8 +176,6 @@ func (s *Server) readPump(client *Client) {
 		switch msg.Type {
 		case "http_response":
 			s.handleHTTPResponse(msg)
-		case "subdomain_request":
-			s.handleSubdomainRequest(client, msg)
 		}
 	}
 }
@@ -184,30 +210,6 @@ func (s *Server) handleHTTPResponse(msg Message) {
 	}
 }
 
-func (s *Server) handleSubdomainRequest(client *Client, msg Message) {
-	if s.isSubdomainAvailable(msg.RequestedSubdomain) {
-		s.unregisterClient(client.subdomain)
-		client.subdomain = msg.RequestedSubdomain
-		s.registerClient(msg.RequestedSubdomain, client)
-		
-		assignMsg := Message{
-			Type:      "subdomain_assigned",
-			Subdomain: fmt.Sprintf("%s.%s", msg.RequestedSubdomain, s.domain),
-		}
-		
-		if err := client.conn.WriteJSON(assignMsg); err != nil {
-			log.Printf("Failed to send subdomain assignment: %v", err)
-		} else {
-			log.Printf("Client reassigned to requested subdomain: %s.%s", msg.RequestedSubdomain, s.domain)
-		}
-	} else {
-		errorMsg := Message{
-			Type:  "error",
-			Error: fmt.Sprintf("Subdomain '%s' is not available", msg.RequestedSubdomain),
-		}
-		client.conn.WriteJSON(errorMsg)
-	}
-}
 
 func (s *Server) HandleHTTPRequest(w http.ResponseWriter, r *http.Request) {
 	host := r.Host

@@ -8,9 +8,40 @@ import (
 
 	"github.com/M1z23R/dr1ll/internal/client"
 	"github.com/M1z23R/dr1ll/internal/config"
+	"golang.org/x/sys/windows/svc"
 )
 
+type DrillService struct {
+	RunFunc func()
+}
+
+func (m *DrillService) Execute(args []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
+	s <- svc.Status{State: svc.StartPending}
+	s <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+
+	go m.RunFunc()
+	for c := range r {
+		switch c.Cmd {
+		case svc.Interrogate:
+			s <- c.CurrentStatus
+		case svc.Stop, svc.Shutdown:
+			log.Println("Service stopping")
+			return false, 0
+		}
+	}
+	return false, 0
+}
+
 func main() {
+	isService, err := svc.IsWindowsService()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if isService {
+		svc.Run("DrillService", &DrillService{RunFunc: startCommand})
+		return
+	}
+
 	if len(os.Args) < 2 {
 		showUsage()
 		os.Exit(1)
@@ -54,13 +85,13 @@ func showUsage() {
 
 func startCommand() {
 	startArgs := os.Args[2:]
-	
+
 	fs := flag.NewFlagSet("start", flag.ExitOnError)
 	port := fs.Int("port", 3000, "Local port to forward requests to")
 	serverURL := fs.String("server", "", "Tunnel server URL (overrides config)")
 	token := fs.String("token", "", "Authentication token (overrides config)")
 	subdomain := fs.String("subdomain", "", "Request specific subdomain")
-	
+
 	fs.Parse(startArgs)
 
 	cfg, err := config.Load()
@@ -140,7 +171,7 @@ func configCommand() {
 		if err != nil {
 			log.Fatalf("Failed to load configuration: %v", err)
 		}
-		
+
 		configPath, _ := config.GetConfigPath()
 		fmt.Printf("Configuration file: %s\n", configPath)
 		fmt.Printf("Tunnel server: %s\n", cfg.TunnelServer)

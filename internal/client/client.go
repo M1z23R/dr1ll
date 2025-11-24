@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,6 +36,7 @@ type Client struct {
 	requestedSubdomain string
 	done               chan struct{}
 	pendingRequests    map[string]chan Message
+	writeMu            sync.Mutex // Protects WebSocket writes
 }
 
 func NewClient(serverURL, token string, localPort int) *Client {
@@ -169,7 +171,11 @@ func (c *Client) forwardRequest(msg Message) {
 		Body:    string(respBody),
 	}
 
-	if err := c.conn.WriteJSON(response); err != nil {
+	c.writeMu.Lock()
+	err = c.conn.WriteJSON(response)
+	c.writeMu.Unlock()
+
+	if err != nil {
 		log.Printf("Failed to send response: %v", err)
 	}
 
@@ -187,7 +193,11 @@ func (c *Client) sendErrorResponse(requestID, errorMsg string) {
 		Body: fmt.Sprintf(`{"error": "%s"}`, errorMsg),
 	}
 
-	if err := c.conn.WriteJSON(response); err != nil {
+	c.writeMu.Lock()
+	err := c.conn.WriteJSON(response)
+	c.writeMu.Unlock()
+
+	if err != nil {
 		log.Printf("Failed to send error response: %v", err)
 	}
 
@@ -212,7 +222,10 @@ func (c *Client) Run() error {
 	case <-interrupt:
 		log.Println("Interrupt received, closing connection...")
 
+		c.writeMu.Lock()
 		err := c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+		c.writeMu.Unlock()
+
 		if err != nil {
 			log.Printf("Error sending close message: %v", err)
 		}
